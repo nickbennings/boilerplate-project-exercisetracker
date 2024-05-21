@@ -1,241 +1,288 @@
-const express = require('express')
-const app = express()
-const cors = require('cors')
-const bodyParser = require('body-parser')
-const crypto = require('crypto')
-require('dotenv').config()
+const express = require('express');
+const mongoose = require('mongoose');
 
-let users = []
-let exercises = []
+const app = express();
+const cors = require('cors');
+require('dotenv').config();
 
-app.use(cors())
-app.use(express.static('public'))
-app.use(bodyParser.urlencoded({ extended: true }));
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
+// Import Mongo DB Atlas models
+const User = require('./models/user');
+const Exercise = require('./models/exercise');
+
+// Mount the body parser as middleware
+app.use(express.json());
+app.use(express.urlencoded( {extended: true} ));
+
+// Connect Mongo DB Atlas
+mongoose.connect(process.env.MONGO_URI, {
+  useUnifiedTopology: true,
+  useNewUrlParser: true
 });
 
-app.get('/api/users', (req, res) => {
-  res.json(users)
-})
+// Enable cors for FCC to test the application
+app.use(cors());
+app.use(express.static('public'));
 
-app.post('/api/users', (req, res) => {
-  const username = req.body.username
+// Print to the console information about each request made
+app.use((req, res, next) => {
+  console.log("method: " + req.method + "  |  path: " + req.path + "  |  IP - " + req.ip);
+  next();
+});
 
-  if (username !== '') {
-    const id = crypto.createHash('sha1').update(username, 'utf8').digest('hex')
+// GET: Display the index page for
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/views/index.html');
+});
 
-    const newUserObj = { '_id': id, 'username': username }
+// PATH /api/users/ Requests
+// GET: Show the contents of the User model
+// POST: Store user into User model
+app.route('/api/users').get((req, res) => {
+  User.find({}, (error, data) => {
+    //console.log(data);
+    res.json(data);
+  });
+}).post((req, res) => {
+  // Get username input into form
+  const potentialUsername = req.body.username;
+  console.log("potential username:", potentialUsername);
 
-    users.push(newUserObj)
-
-    res.json(newUserObj)
-  }
-})
-
-const findUserById = (id) => {
-  for (let i = 0; i < users.length; i++) {
-    const element = users[i]
-    if (element['_id'] === id) {
-      return element
+  // Check to see if the username has already been entered
+  User.findOne({username: potentialUsername}, (error, data) => {
+    if (error) {
+      res.send("Unknown userID");
+      return console.log(error);
     }
-  }
 
-  return null
-}
+    if (!data) { // If username is not stored yet, create and save a User object
+      const newUser = new User({
+        username: potentialUsername
+      });
 
-app.get('/api/users/exercises', (req, res) => {
-  res.sendStatus(404)
-})
+      // Save the user
+      newUser.save((error, data) => {
+        if (error) return console.log(error);
+        // Remove the key-value pair associated with the key __v
+        const reducedData = {
+          "username": data.username, 
+          "_id": data._id
+        };
+        res.json(reducedData);
+        console.log(reducedData);
+      });
+    } else { // If username is already stored, send a message to the user
+      res.send(`Username ${potentialUsername} already exists.`);
+      console.log(`Username ${potentialUsername} already exists.`);
+    }
+  });
+});
 
+// PATH /api/users/:_id/exercises
+// POST: Store new exercise in the Exercise model 
 app.post('/api/users/:_id/exercises', (req, res) => {
-  const id = req.params['_id']
-  const description = req.body['description']
-  const durationStr = req.body['duration']
-  const duration = parseInt(durationStr)
-  const dateStr = req.body['date']
+  // Get data from form
+  const userID = req.body[":_id"] || req.params._id;
+  const descriptionEntered = req.body.description;
+  const durationEntered = req.body.duration;
+  const dateEntered = req.body.date;
 
-  if (id === '') {
-    res.sendStatus(404)
-    console.log('New exercise failed: no id given\n')
-    return
+  // Print statement for debugging
+  console.log(userID, descriptionEntered, durationEntered, dateEntered);
+
+  // Make sure the user has entered in an id, a description, and a duration
+  // Set the date entered to now if the date is not entered
+  if (!userID) {
+    res.json("Path `userID` is required.");
+    return;
+  }
+  if (!descriptionEntered) {
+    res.json("Path `description` is required.");
+    return;
+  }
+  if (!durationEntered) {
+    res.json("Path `duration` is required.");
+    return;
   }
 
-  const user = findUserById(id)
+  // Check if user ID is in the User model
+  User.findOne({"_id": userID}, (error, data) => {
+    if (error) {
+      res.json("Invalid userID");
+      return console.log(error);
+    }
+    if (!data) {
+      res.json("Unknown userID");
+      return;
+    } else {
+      console.log(data);
+      const usernameMatch = data.username;
+      
+      // Create an Exercise object
+      const newExercise = new Exercise({
+        username: usernameMatch,
+        description: descriptionEntered,
+        duration: durationEntered
+      });
 
-  if (user === null) {
-    res.sendStatus(404)
-    console.log("New exercise failed: couldn't find user\n")
-    return
-  }
-
-  const username = user['username']
-
-  if (description === '') {
-    res.status(400).send('Path `description` is required.')
-    console.log('New exercise failed: description is required\n')
-    return
-  }
-
-  if (durationStr === '') {
-    res.status(400).send('Path `duration` is required.')
-    console.log('New exercise failed: duration is required\n')
-    return
-  }
-
-  if (isNaN(duration)) {
-    res.status(400).send('Path `duration` is not a number.')
-    console.log('New exercise failed: duration is not a number\n')
-    return
-  }
-
-  let date = new Date(dateStr)
-
-  if (dateStr === '' || dateStr === undefined) {
-    date = new Date()
-  }
-
-  if (date === 'Invalid Date') {
-    res.status(400).send('Path `date` is not a valid date.')
-    console.log('New exercise failed: date is not valid ' + dateStr + '\n')
-    return
-  }
-
-  let exercise = JSON.parse(JSON.stringify(user))
-
-  exercise['date'] = date.toDateString()
-  exercise['duration'] = duration
-  exercise['description'] = description
-
-  exercises.push(exercise)
-
-  res.json(exercise)
-})
-
-const findExercisesById = (id, from, to, limit) => {
-  let findings = []
-
-  for (let i = 0; i < exercises.length; i++) {
-    const element = exercises[i]
-    if (element['_id'] === id) {
-      const dateStr = element['date']
-      const date = new Date(dateStr)
-
-      if (from !== null && date < from) {
-        continue
+      // Set the date of the Exercise object if the date was entered
+      if (dateEntered) {
+        newExercise.date = dateEntered;
       }
 
-      if (to !== null && date > to) {
-        continue
-      }
+      // Save the exercise
+      newExercise.save((error, data) => {
+        if (error) return console.log(error);
 
-      if (limit !== null && findings.length >= limit) {
-        break
-      }
+        console.log(data);
 
-      const finding = {
-        'description': element['description'],
-        'duration': parseInt(element['duration']),
-        'date': dateStr
-      }
+        // Create JSON object to be sent to the response
+        const exerciseObject = {
+          "_id": userID,
+          "username": data.username,
+          "date": data.date.toDateString(),
+          "duration": data.duration,
+          "description": data.description
+        };
 
-      findings.push(finding)
+        // Send JSON object to the response
+        res.json(exerciseObject);
+
+      });
+    }
+  });
+});
+
+
+// PATH /api/users/:_id/logs?[from][&to][&limit]
+app.get('/api/users/:_id/logs', (req, res) => {
+  const id = req.body["_id"] || req.params._id;
+  var fromDate = req.query.from;
+  var toDate = req.query.to;
+  var limit = req.query.limit;
+
+  console.log(id, fromDate, toDate, limit);
+
+  // Validate the query parameters
+  if (fromDate) {
+    fromDate = new Date(fromDate);
+    if (fromDate == "Invalid Date") {
+      res.json("Invalid Date Entered");
+      return;
     }
   }
 
-  return findings
-}
-
-app.get('/api/users/:id/logs', (req, res) => {
-  const id = req.params['id']
-  let logString = "Log request for: " + id + '/logs'
-  let firstQuery = true
-
-  const fromStr = req.query['from']
-  let from = null
-
-  if (fromStr !== undefined) {
-    from = new Date(fromStr)
-    if (from === 'Invalid Date') {
-      res.status(400).send('Query `from` is not a valid date.')
-      console.log('Log request failed: ' + id + ' from: ' + fromStr)
-      return
+  if (toDate) {
+    toDate = new Date(toDate);
+    if (toDate == "Invalid Date") {
+      res.json("Invalid Date Entered");
+      return;
     }
-
-    if (firstQuery === true) {
-      firstQuery = false
-      logString += '?'
-    }
-
-    logString += 'from=' + fromStr + '&'
   }
 
-  const toStr = req.query['to']
-  let to = null
-
-  if (toStr !== undefined) {
-    to = new Date(toStr)
-
-    if (to === 'Invalid Date') {
-      res.status(400).send('Query `to` is not a valid date.')
-      console.log('Log request failed: ' + id + ' to: ' + toStr)
-      return
-    }
-
-    if (firstQuery === true) {
-      firstQuery = false
-      logString += '?'
-    }
-
-    logString += 'to=' + toStr + '&'
-  }
-
-  const limitStr = req.query['limit']
-  let limit = null
-
-  if (limitStr !== undefined) {
-    limit = parseInt(limitStr)
-
+  if (limit) {
+    limit = new Number(limit);
     if (isNaN(limit)) {
-      res.status(400).send('Query `limit` is not number.')
-      console.log('Log request failed: ' + id + ' limit: ' + limitStr)
-      return
+      res.json("Invalid Limit Entered");
+      return;
     }
+  }
 
-    if (firstQuery === true) {
-      firstQuery = false
-      logString += '?'
+  // Get the user's information
+  User.findOne({ "_id" : id }, (error, data) => {
+    if (error) {
+      res.json("Invalid UserID");
+      return console.log(error);
     }
+    if (!data) {
+      res.json("Invalid UserID");
+    } else {
 
-    logString += 'limit=' + limit + '&'
-  }
+      // Initialize the object to be returned
+      const usernameFound = data.username;
+      var objToReturn = { "_id" : id, "username" : usernameFound };
 
-  logString = logString.slice(0, logString.length - 1);
+      // Initialize filters for the count() and find() methods
+      var findFilter = { "username" : usernameFound };
+      var dateFilter = {};
 
-  if (id === '') {
-    res.sendStatus(404)
-    return
-  }
+      // Add to and from keys to the object if available
+      // Add date limits to the date filter to be used in the find() method on the Exercise model
+      if (fromDate) {
+        objToReturn["from"] = fromDate.toDateString();
+        dateFilter["$gte"] = fromDate;
+        if (toDate) {
+          objToReturn["to"] = toDate.toDateString();
+          dateFilter["$lt"] = toDate;
+        } else {
+          dateFilter["$lt"] = Date.now();
+        }
+      }
 
-  const user = findUserById(id)
+      if (toDate) {
+        objToReturn["to"] = toDate.toDateString();
+        dateFilter["$lt"] = toDate;
+        dateFilter["$gte"] = new Date("1960-01-01");
+      }
 
-  if (user === null) {
-    res.sendStatus(404)
-    return
-  }
+      // Add dateFilter to findFilter if either date is provided
+      if (toDate || fromDate) {
+        findFilter.date = dateFilter;
+      }
 
-  const findings = findExercisesById(id, from, to, limit)
+      // console.log(findFilter);
+      // console.log(dateFilter);
 
-  let logs = {
-    'username': user['username'],
-    'count': findings.length,
-    '_id': id,
-    'log': findings
-  }
+      // Add the count entered or find the count between dates
+      Exercise.count(findFilter, (error, data) => {
+        if (error) {
+          res.json("Invalid Date Entered");
+          return console.log(error);
+        }
+        // Add the count key 
+        var count = data;
+        if (limit && limit < count) {
+          count = limit;
+        }
+        objToReturn["count"] = count;
 
-  res.json(logs)
-})
 
+        // Find the exercises and add a log key linked to an array of exercises
+        Exercise.find(findFilter, (error, data) => {
+          if (error) return console.log(error);
+
+          // console.log(data);
+
+          var logArray = [];
+          var objectSubset = {};
+          var count = 0;
+
+          // Iterate through data array for description, duration, and date keys
+          data.forEach(function(val) {
+            count += 1;
+            if (!limit || count <= limit) {
+              objectSubset = {};
+              objectSubset.description = val.description;
+              objectSubset.duration = val.duration;
+              objectSubset.date = val.date.toDateString();
+              console.log(objectSubset);
+              logArray.push(objectSubset);
+            }
+          });
+
+          // Add the log array of objects to the object to return
+          objToReturn["log"] = logArray;
+
+          // Return the completed JSON object
+          res.json(objToReturn);
+        });
+
+      });
+
+    }
+  });
+});
+
+// Listen on the proper port to connect to the server 
 const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log('Your app is listening on port ' + listener.address().port)
+  console.log('Your app is listening on port ' + listener.address().port);
 })
