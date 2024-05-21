@@ -1,4 +1,5 @@
-// Add necessary imports
+const express = require('express');
+const app = express();
 const assert = require('assert');
 
 // Create a new user
