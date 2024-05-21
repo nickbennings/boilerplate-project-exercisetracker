@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-const exercisesRouter = require('./routes/exercises');
+const exercisesRouter = require('./routes/exercises'); // Corrected the file path
 const usersRouter = require('./routes/users');
 
 app.use('/api/exercises', exercisesRouter);
