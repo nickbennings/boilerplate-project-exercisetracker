@@ -1,39 +1,81 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const app = express();
 const assert = require('assert');
-const mongoose = require('mongoose'); // Add this line
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
 
-// Define Exercise and User models
-const Exercise = mongoose.model('Exercise', {
-  username: String,
-  description: String,
-  duration: Number,
-  date: Date
-});
-
-const User = mongoose.model('User', {
-  username: String
-});
-
-// Continue with your existing code
 // Create a new user
 app.post('/api/users', async (req, res) => {
-  // Your existing code
+  const { username } = req.body;
+  const user = new User({ username });
+
+  try {
+    const savedUser = await user.save();
+    res.json(savedUser);
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // Add an exercise for a user
 app.post('/api/users/:_id/exercises', async (req, res) => {
-  // Your existing code
+  const { description, duration, date } = req.body;
+  const { _id } = req.params;
+
+  try {
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
+
+    const exercise = new Exercise({ username: user.username, description, duration, date });
+    await exercise.save();
+
+    res.json({ ...user.toJSON(), ...exercise.toJSON() });
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
 // Retrieve exercise logs for a user
 app.get('/api/users/:_id/logs', async (req, res) => {
-  // Your existing code
+  const { _id } = req.params;
+  const { from, to, limit } = req.query;
+
+  try {
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
+
+    let query = { username: user.username };
+    if (from || to) {
+      query.date = {};
+      if (from) {
+        query.date.$gte = new Date(from);
+      }
+      if (to) {
+        query.date.$lte = new Date(to);
+      }
+    }
+
+    let logQuery = Exercise.find(query);
+    if (limit) {
+      logQuery = logQuery.limit(parseInt(limit));
+    }
+
+    const log = await logQuery.exec();
+    res.json({ ...user.toJSON(), count: log.length, log });
+  } catch (err) {
+    res.status(400).send(err);
+  }
 });
 
-module.exports = app;
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
