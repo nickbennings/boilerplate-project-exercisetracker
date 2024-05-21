@@ -72,6 +72,11 @@ app.post('/api/exercise/new-user', (req, res) => {
   });
 });
 
+// Default route handler for root URL
+app.get('/', (req, res) => {
+  res.send('Welcome to the Exercise Tracker App!');
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
