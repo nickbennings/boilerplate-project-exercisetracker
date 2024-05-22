@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const app = express();
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -116,11 +116,6 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
-});
-
-// Default route for root path
-app.get('/', (req, res) => {
-  res.send('Welcome to the exercise tracker API!');
 });
 
 // Start the server
