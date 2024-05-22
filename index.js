@@ -118,6 +118,11 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   }
 });
 
+// Default route for root path
+app.get('/', (req, res) => {
+  res.send('Welcome to the exercise tracker API!');
+});
+
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
